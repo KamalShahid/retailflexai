@@ -14,14 +14,15 @@ except ImportError:
 # -----------------------------------------------------------------------------------------
 
 import os
-import smtplib
 from datetime import date, timedelta
-from email.message import EmailMessage
+from urllib.parse import urlencode
 
 import pandas as pd
 import streamlit as st
 
 from retailflex.agent import run_retailflex
+from retailflex.inbox import process_inbox
+from retailflex.mailbox import send_reply, split_subject
 
 st.set_page_config(page_title="RetailFlex AI", page_icon="⚡", layout="wide")
 
@@ -67,6 +68,35 @@ with st.sidebar:
 st.title("⚡ RetailFlex AI")
 st.subheader("Agentic AI for appliance scheduling & retail electricity cost optimization")
 
+gmail_user, gmail_pass = get_secret("GMAIL_ADDRESS"), get_secret("GMAIL_APP_PASSWORD")
+
+# ------------------------------- Inbox ------------------------------- #
+with st.expander("📬 Inbox — answer emails sent to RetailFlex"):
+    if not (gmail_user and gmail_pass):
+        st.info("Add GMAIL_ADDRESS and GMAIL_APP_PASSWORD to your secrets to enable the inbox.")
+    else:
+        st.write(
+            f"New emails to **{gmail_user}** are answered automatically every ~5 minutes by GitHub Actions. "
+            "You can also check the inbox right now:"
+        )
+        if st.button("📥 Check inbox now"):
+            if not groq_key:
+                st.error("Please add your Groq API key first.")
+            else:
+                with st.spinner("Reading unread emails and replying… (about 30–60 s per email)"):
+                    try:
+                        summary = process_inbox(gmail_user, gmail_pass, groq_key, limit=3, log=lambda *_: None)
+                        if summary:
+                            st.dataframe(pd.DataFrame(summary), hide_index=True, width="stretch")
+                        else:
+                            st.success("No unread emails.")
+                    except Exception as e:
+                        st.error(
+                            f"Could not check the inbox: {e}\n\nIf this says a connection was closed or timed out, "
+                            "this hosting network blocks email ports — the GitHub Actions worker will still work."
+                        )
+
+# ------------------------------- Manual run ------------------------------- #
 email_text = st.text_area("Consumer email", value=SAMPLE_EMAIL, height=230)
 
 if st.button("🚀 Run RetailFlex AI", type="primary", width="stretch"):
@@ -92,28 +122,26 @@ if output:
         st.markdown(output["email"])
         st.download_button("⬇️ Download reply (.md)", output["email"], file_name="retailflex_reply.md")
 
-        # Optional: send the reply with Gmail (needs secrets, see README)
-        gmail_user, gmail_pass = get_secret("GMAIL_ADDRESS"), get_secret("GMAIL_APP_PASSWORD")
-        with st.expander("📤 Send this reply by email (optional)"):
-            if not (gmail_user and gmail_pass):
-                st.info("Add GMAIL_ADDRESS and GMAIL_APP_PASSWORD to your secrets to enable sending.")
+        # Send the reply by email
+        with st.expander("📤 Send this reply by email"):
+            to_addr = st.text_input("Consumer email address")
+            subject, body = split_subject(output["email"])
+            if to_addr:
+                # Always-works option: open a pre-filled draft in Gmail
+                compose = "https://mail.google.com/mail/?" + urlencode(
+                    {"view": "cm", "fs": "1", "to": to_addr, "su": subject, "body": body}
+                )
+                st.link_button("✉️ Open as a Gmail draft", compose)
+            if gmail_user and gmail_pass:
+                if st.button("Send automatically") and to_addr:
+                    with st.spinner("Sending…"):
+                        try:
+                            send_reply(gmail_user, gmail_pass, to_addr, output["email"])
+                            st.success(f"Email sent to {to_addr}")
+                        except Exception as e:
+                            st.error(f"{e}\n\nUse **Open as a Gmail draft** instead — it always works.")
             else:
-                to_addr = st.text_input("Consumer email address")
-                if st.button("Send email") and to_addr:
-                    lines = output["email"].splitlines()
-                    subject = "Your RetailFlex AI schedule"
-                    if lines and lines[0].lower().startswith("subject:"):
-                        subject, lines = lines[0].split(":", 1)[1].strip(), lines[1:]
-                    msg = EmailMessage()
-                    msg["From"], msg["To"], msg["Subject"] = gmail_user, to_addr, subject
-                    msg.set_content("\n".join(lines).strip())
-                    try:
-                        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-                            server.login(gmail_user, gmail_pass)
-                            server.send_message(msg)
-                        st.success(f"Email sent to {to_addr}")
-                    except Exception as e:
-                        st.error(f"Could not send email: {e}")
+                st.caption("Add GMAIL_ADDRESS and GMAIL_APP_PASSWORD to your secrets to send automatically.")
 
     if data is None:
         st.warning("The agent did not call the optimizer, so no numbers are available. Try running again.")

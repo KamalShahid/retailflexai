@@ -18,14 +18,19 @@ A consumer writes an email describing tomorrow's appliance needs. A single **Cre
 ```
 retailflex-ai/
 ├── app.py                        # Streamlit user interface
+├── inbox_worker.py               # answers new emails automatically
 ├── requirements.txt              # Python libraries (pinned versions)
 ├── README.md
 ├── .gitignore                    # keeps secrets out of GitHub
+├── .github/workflows/
+│   └── retailflex-inbox.yml      # runs inbox_worker.py every 5 minutes
 ├── .streamlit/
 │   └── secrets.toml.example      # template for your API keys
 └── retailflex/
     ├── __init__.py
     ├── agent.py                  # the CrewAI agent + task
+    ├── inbox.py                  # read inbox -> run agent -> reply
+    ├── mailbox.py                # Gmail sending (SMTP) and reading (IMAP)
     ├── tools.py                  # GridSense optimizer tool + DuckDuckGo tool
     ├── gridsense.py              # GridSense-A / GridSense-B price forecasts
     └── optimizer.py              # appliance scheduling optimizer
@@ -69,8 +74,18 @@ GMAIL_ADDRESS = "yourname@gmail.com"
 GMAIL_APP_PASSWORD = "abcd efgh ijkl mnop"
 ```
 
+## Automatic email replies (GitHub Actions)
+
+`.github/workflows/retailflex-inbox.yml` runs `inbox_worker.py` every ~5 minutes.
+It reads unread emails sent to your RetailFlex Gmail address, runs the agent and
+replies in the same thread. Own emails, bounces, no-reply senders and auto-replies are skipped.
+
+Add three repository secrets (Settings → Secrets and variables → Actions):
+`GROQ_API_KEY`, `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`.
+
+Test it immediately from the **Actions** tab → *RetailFlex inbox* → **Run workflow**.
+
 ## Ideas for next versions
 
 - Replace the simulated GridSense model in `gridsense.py` with a trained ML model on real data
 - Read appliance lists from CSV/Excel attachments
-- Poll a Gmail inbox automatically and reply without the UI
