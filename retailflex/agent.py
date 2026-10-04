@@ -19,8 +19,23 @@ from .tools import DuckDuckGoSearchTool, RetailFlexOptimizerTool
 GROQ_MODEL = "groq/openai/gpt-oss-120b"  # "groq/" tells CrewAI to use Groq
 
 
+class GroqLLM(LLM):
+    """
+    CrewAI marks some messages with a 'cache_breakpoint' flag (used for Anthropic
+    prompt caching). Groq rejects unknown message fields, so we remove the flag
+    before each request is sent.
+    """
+
+    def _format_messages_for_provider(self, messages):
+        formatted = super()._format_messages_for_provider(messages)
+        return [
+            {k: v for k, v in m.items() if k != "cache_breakpoint"} if isinstance(m, dict) else m
+            for m in formatted
+        ]
+
+
 def build_llm(api_key: str) -> LLM:
-    return LLM(model=GROQ_MODEL, api_key=api_key, temperature=0.2, max_tokens=4000)
+    return GroqLLM(model=GROQ_MODEL, api_key=api_key, temperature=0.2, max_tokens=4000)
 
 
 def run_retailflex(email_text: str, target_date: date, groq_api_key: str) -> dict:
