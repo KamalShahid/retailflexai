@@ -1,0 +1,5 @@
+crewai[litellm]==1.15.23
+ddgs==9.16.0
+streamlit==1.65.0
+pandas==3.0.6
+pysqlite3-binary==0.5.4.post2; sys_platform == "linux"
